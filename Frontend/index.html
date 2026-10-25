@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tasks Management & Microservices Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap");
+      * {
+        font-family: "Kanit", sans-serif;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+      <!-- Header Section -->
+      <header
+        class="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/80 backdrop-blur p-6 rounded-2xl border border-slate-700/50 gap-4 shadow-lg"
+      >
+        <div>
+          <h1
+            class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent flex items-center gap-2"
+          >
+            <i class="fa-solid fa-list-check text-blue-400"></i> Tasks
+            Management
+          </h1>
+          <p class="text-slate-400 text-sm mt-1">
+            ระบบจัดการงาน (Microservices & Async Task Queue Architecture)
+          </p>
+        </div>
+
+        <!-- System Stats Widget (Route 2: GET /api/v1/tasks/stats/overview) -->
+        <div
+          class="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/60 w-full md:w-auto"
+        >
+          <div class="text-center px-3 border-r border-slate-700/80">
+            <span class="text-[10px] text-slate-400 uppercase block"
+              >งานทั้งหมด</span
+            >
+            <span id="stat-total" class="text-lg font-bold text-blue-400"
+              >0</span
+            >
+          </div>
+          <div class="text-center px-3 border-r border-slate-700/80">
+            <span class="text-[10px] text-slate-400 uppercase block"
+              >รอดำเนินการ</span
+            >
+            <span id="stat-pending" class="text-lg font-bold text-amber-400"
+              >0</span
+            >
+          </div>
+          <div class="text-center px-3">
+            <span class="text-[10px] text-slate-400 uppercase block"
+              >เสร็จสิ้น</span
+            >
+            <span id="stat-done" class="text-lg font-bold text-emerald-400"
+              >0</span
+            >
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Form Section: เพิ่มงานใหม่ (Route 4: POST /api/v1/tasks) -->
+        <div
+          class="bg-slate-800/80 backdrop-blur p-6 rounded-2xl border border-slate-700/50 shadow-lg h-fit"
+        >
+          <h2
+            class="text-xl font-semibold mb-4 text-emerald-400 flex items-center gap-2"
+          >
+            <i class="fa-solid fa-plus-circle"></i> มอบหมายงานใหม่
+          </h2>
+
+          <form id="create-task-form" class="space-y-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1"
+                >ชื่องาน (Task Title)</label
+              >
+              <input
+                type="text"
+                id="task-title"
+                required
+                placeholder="เช่น ส่งงานโปรเจกต์ระยะที่ 2"
+                class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 transition"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs text-slate-400 mb-1"
+                >กำหนดส่ง (Due Date)</label
+              >
+              <input
+                type="date"
+                id="task-duedate"
+                required
+                class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 transition text-slate-200"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1"
+                  >ผู้รับผิดชอบ (User)</label
+                >
+                <input
+                  type="text"
+                  id="task-userid"
+                  required
+                  placeholder="กรอก ID หรือ ชื่อ"
+                  class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 transition text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-400 mb-1"
+                  >หมวดหมู่ (Category)</label
+                >
+                <select
+                  id="task-categoryid"
+                  required
+                  class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 transition"
+                >
+                  <option value="1">Project</option>
+                  <option value="2">Assignment</option>
+                  <option value="3">Daily</option>
+                  <option value="4">Meeting</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">สถานะ</label>
+              <select
+                id="task-status"
+                class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 transition"
+              >
+                <option value="Pending">Pending</option>
+                <option value="To Do">To Do</option>
+                <option value="In Progress">In Progress</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20"
+            >
+              <i class="fa-solid fa-paper-plane"></i> บันทึกงาน
+            </button>
+          </form>
+        </div>
+
+        <!-- Task List Section (Route 1: GET /api/v1/tasks) -->
+        <div
+          class="lg:col-span-2 bg-slate-800/80 backdrop-blur p-6 rounded-2xl border border-slate-700/50 shadow-lg"
+        >
+          <div class="flex justify-between items-center mb-6">
+            <h2
+              class="text-xl font-semibold text-blue-400 flex items-center gap-2"
+            >
+              <i class="fa-solid fa-tasks"></i> รายการงานในฐานข้อมูล (tasks_db)
+            </h2>
+            <button
+              onclick="refreshData()"
+              class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-slate-300 transition flex items-center gap-1"
+            >
+              <i class="fa-solid fa-rotate"></i> ดึงข้อมูลใหม่
+            </button>
+          </div>
+
+          <div id="tasks-container" class="space-y-3">
+            <p class="text-center text-slate-500 py-8">
+              กำลังดึงข้อมูลจาก Database...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal แสดงรายละเอียดงานตาม ID (Route 3: GET /api/v1/tasks/:id) -->
+    <div
+      id="task-modal"
+      class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4 z-50"
+    >
+      <div
+        class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative"
+      >
+        <button
+          onclick="closeModal()"
+          class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+
+        <h3 class="text-lg font-semibold text-blue-400 flex items-center gap-2">
+          <i class="fa-solid fa-circle-info"></i> รายละเอียดงาน (Task Details)
+        </h3>
+
+        <div id="modal-content" class="space-y-3 text-sm text-slate-300">
+          <p class="text-slate-500 text-center py-4">กำลังโหลดข้อมูล...</p>
+        </div>
+
+        <div class="pt-2 text-right">
+          <button
+            onclick="closeModal()"
+            class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded-xl text-xs transition"
+          >
+            ปิดหน้าต่าง
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE_URL = "http://localhost:3000/api/v1";
+
+      document.addEventListener("DOMContentLoaded", () => {
+        refreshData();
+      });
+
+      function refreshData() {
+        fetchTasks();
+        fetchStats();
+      }
+
+      // Route 1: GET /api/v1/tasks - ดึงรายการงานทั้งหมด
+      async function fetchTasks() {
+        const container = document.getElementById("tasks-container");
+        try {
+          const res = await fetch(`${API_BASE_URL}/tasks`);
+          const result = await res.json();
+
+          if (!res.ok)
+            throw new Error(result.message || "เกิดข้อผิดพลาดในการดึงข้อมูล");
+
+          if (!result.data || result.data.length === 0) {
+            container.innerHTML = `<div class="text-center text-slate-500 py-8">ไม่มีรายการงานในระบบ</div>`;
+            return;
+          }
+
+          container.innerHTML = result.data
+            .map(
+              (task) => `
+          <div class="bg-slate-900/70 p-4 rounded-xl border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:border-slate-600">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-slate-100 text-base">${escapeHtml(task.title)}</span>
+                ${getStatusBadge(task.status)}
+              </div>
+              <div class="text-xs text-slate-400 flex flex-wrap items-center gap-4">
+                <span><i class="fa-regular fa-user text-slate-500"></i> ${escapeHtml(task.user_name || "-")}</span>
+                <span><i class="fa-regular fa-folder text-slate-500"></i> ${escapeHtml(task.category_name || "-")}</span>
+                <span><i class="fa-regular fa-calendar text-slate-500"></i> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString("th-TH") : "-"}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 self-end sm:self-center">
+              <button onclick="viewTaskDetail(${task.id})" 
+                title="ดูรายละเอียดงาน"
+                class="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1">
+                <i class="fa-solid fa-eye"></i> รายละเอียด
+              </button>
+
+              ${
+                task.status !== "DONE" &&
+                task.status !== "Done" &&
+                task.status !== "เสร็จแล้ว"
+                  ? `
+                <button onclick="markAsDone(${task.id})" 
+                  class="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1">
+                  <i class="fa-solid fa-check"></i> เสร็จงาน (Done)
+                </button>
+              `
+                  : `
+                <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                  <i class="fa-solid fa-circle-check"></i> เสร็จสิ้นแล้ว
+                </span>
+              `
+              }
+
+              <button onclick="deleteTask(${task.id})" 
+                title="ลบงาน"
+                class="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 px-3 py-1.5 rounded-lg text-xs transition">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `,
+            )
+            .join("");
+        } catch (err) {
+          container.innerHTML = `<div class="text-center text-rose-400 py-8">ไม่สามารถดึงข้อมูลได้: ${err.message}</div>`;
+        }
+      }
+
+      // Route 2: GET /api/v1/tasks/stats/overview - ดึงสถิติภาพรวม
+      async function fetchStats() {
+        try {
+          const res = await fetch(`${API_BASE_URL}/tasks/stats/overview`);
+          const result = await res.json();
+
+          if (res.ok && result.data) {
+            document.getElementById("stat-total").innerText =
+              result.data.totalTasks || 0;
+            document.getElementById("stat-pending").innerText =
+              result.data.pendingTasks || 0;
+            document.getElementById("stat-done").innerText =
+              result.data.doneTasks || 0;
+          }
+        } catch (err) {
+          console.warn("ไม่สามารถดึงสถิติได้:", err.message);
+        }
+      }
+
+      // Route 3: GET /api/v1/tasks/:id - ดึงข้อมูลงานตาม ID
+      async function viewTaskDetail(id) {
+        const modal = document.getElementById("task-modal");
+        const modalContent = document.getElementById("modal-content");
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+        modalContent.innerHTML = `<p class="text-slate-500 text-center py-4"><i class="fa-solid fa-spinner fa-spin"></i> กำลังดึงข้อมูลจาก ID: ${id}...</p>`;
+
+        try {
+          const res = await fetch(`${API_BASE_URL}/tasks/${id}`);
+          const result = await res.json();
+
+          if (!res.ok) throw new Error(result.message || "ไม่พบข้อมูลงาน");
+
+          const task = result.data;
+          modalContent.innerHTML = `
+            <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700/60 space-y-3">
+              <div>
+                <span class="text-xs text-slate-500 block">Task ID:</span>
+                <span class="font-mono text-emerald-400 font-bold">#${task.id}</span>
+              </div>
+              <div>
+                <span class="text-xs text-slate-500 block">ชื่องาน:</span>
+                <span class="font-medium text-slate-100">${escapeHtml(task.title)}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <span class="text-xs text-slate-500 block">ผู้รับผิดชอบ:</span>
+                  <span class="text-slate-300">${escapeHtml(task.user_name || "-")}</span>
+                </div>
+                <div>
+                  <span class="text-xs text-slate-500 block">หมวดหมู่:</span>
+                  <span class="text-slate-300">${escapeHtml(task.category_name || "-")}</span>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <span class="text-xs text-slate-500 block">กำหนดส่ง:</span>
+                  <span class="text-slate-300">${task.dueDate ? new Date(task.dueDate).toLocaleDateString("th-TH") : "-"}</span>
+                </div>
+                <div>
+                  <span class="text-xs text-slate-500 block">สถานะปัจจุบัน:</span>
+                  <span>${getStatusBadge(task.status)}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (err) {
+          modalContent.innerHTML = `<p class="text-rose-400 text-center py-4">เกิดข้อผิดพลาด: ${err.message}</p>`;
+        }
+      }
+
+      function closeModal() {
+        const modal = document.getElementById("task-modal");
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+
+      // Route 4: POST /api/v1/tasks - มอบหมายงานใหม่
+      document
+        .getElementById("create-task-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const categoryValue =
+            document.getElementById("task-categoryid").value;
+
+          const payload = {
+            title: document.getElementById("task-title").value,
+            dueDate: document.getElementById("task-duedate").value,
+            user_id: document.getElementById("task-userid").value.trim(),
+            category_id: isNaN(categoryValue)
+              ? categoryValue
+              : Number(categoryValue),
+            status: document.getElementById("task-status").value,
+          };
+
+          try {
+            const res = await fetch(`${API_BASE_URL}/tasks`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message);
+
+            document.getElementById("create-task-form").reset();
+            refreshData();
+          } catch (err) {
+            alert(`เกิดข้อผิดพลาด: ${err.message}`);
+          }
+        });
+
+      // Route 5: PUT /api/v1/tasks/:id - อัปเดตสถานะงานเป็น Done
+      async function markAsDone(id) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/tasks/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status: "Done",
+            }),
+          });
+
+          const result = await res.json();
+          if (!res.ok) {
+            throw new Error(result.message || "เกิดข้อผิดพลาดจาก Server");
+          }
+
+          // รีเฟรชทั้งรายการงานและตัวเลขสถิติด้านบนทันที
+          refreshData();
+        } catch (err) {
+          alert(`เกิดข้อผิดพลาด: ${err.message}`);
+        }
+      }
+
+      // Route 6: DELETE /api/v1/tasks/:id - ลบรายการงาน
+      async function deleteTask(id) {
+        if (!confirm("ยืนยันการลบรายการงานนี้ออกจาก Database?")) return;
+
+        try {
+          const res = await fetch(`${API_BASE_URL}/tasks/${id}`, {
+            method: "DELETE",
+          });
+          const result = await res.json();
+
+          if (!res.ok) throw new Error(result.message);
+
+          refreshData();
+        } catch (err) {
+          alert(`เกิดข้อผิดพลาด: ${err.message}`);
+        }
+      }
+
+      function getStatusBadge(status) {
+        if (status === "DONE" || status === "Done" || status === "เสร็จแล้ว") {
+          return `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full">Done</span>`;
+        } else if (status === "Pending") {
+          return `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] px-2 py-0.5 rounded-full">Pending</span>`;
+        }
+        return `<span class="bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5 rounded-full">${escapeHtml(status)}</span>`;
+      }
+
+      function escapeHtml(text) {
+        if (!text) return "";
+        return text.replace(
+          /[&<>"']/g,
+          (m) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#039;",
+            })[m],
+        );
+      }
+    </script>
+  </body>
+</html>

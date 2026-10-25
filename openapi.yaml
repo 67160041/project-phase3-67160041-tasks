@@ -1,247 +1,119 @@
 openapi: 3.0.3
 info:
-  title: Tasks API
-  description: API สำหรับจัดการข้อมูลงาน (Tasks Management) พัฒนาในโครงงานระยะที่ 2
+  title: Tasks Management Microservice API
+  description: >
+    API สำหรับระบบจัดการงาน (Tasks Management) ที่เชื่อมต่อกับฐานข้อมูล MySQL 
+    และประมวลผลงานแบบเบื้องหลังด้วย Redis Task Queue (BullMQ)
   version: 1.0.0
+
 servers:
   - url: http://localhost:3000/api/v1
-    description: Development server
+    description: Development Server
+
+paths:
+  /tasks:
+    get:
+      summary: ดึงรายการงานทั้งหมด (Route 1)
+      responses:
+        "200":
+          description: ดึงข้อมูลสำเร็จ
+
+    post:
+      summary: มอบหมายงานใหม่ (Route 4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskInput"
+      responses:
+        "201":
+          description: บันทึกงานสำเร็จ
+
+  /tasks/stats/overview:
+    get:
+      summary: ดึงสถิติภาพรวมระบบ (Route 2)
+      responses:
+        "200":
+          description: ดึงสถิติสำเร็จ
+
+  /tasks/{id}:
+    get:
+      summary: ดึงข้อมูลงานตาม ID (Route 3)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ดึงข้อมูลสำเร็จ
+
+    put:
+      summary: อัปเดตสถานะงาน (Route 5)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: Done
+      responses:
+        "200":
+          description: แก้ไขข้อมูลสำเร็จ
+
+    delete:
+      summary: ลบรายการงาน (Route 6)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ลบข้อมูลสำเร็จ
 
 components:
   schemas:
-    ErrorResponse:
+    CreateTaskInput:
       type: object
+      required:
+        - title
+        - dueDate
+        - status
+        - user_id
+        - category_id
       properties:
-        message:
-          type: string
-          example: "เกิดข้อผิดพลาดในการดึงข้อมูล"
-        error:
-          type: string
-          example: "รายละเอียดข้อผิดพลาด"
-    Task:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
         title:
           type: string
-          example: "ส่งงานโครงงานระยะที่ 2"
+          example: ส่งงานโปรเจกต์ระยะที่ 2
         dueDate:
           type: string
           format: date
           example: "2026-10-31"
         status:
           type: string
-          example: "pending"
-        user_name:
-          type: string
-          example: "Somchai"
-        category_name:
-          type: string
-          example: "Work"
-
-paths:
-  /tasks:
-    get:
-      summary: ดึงรายการงานทั้งหมด
-      description: ดึงรายการงานทั้งหมดจากฐานข้อมูล พร้อมเชื่อมชื่อ User และ Category
-      responses:
-        "200":
-          description: สำเร็จ
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "สำเร็จ"
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Task"
-        "500":
-          description: เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-    post:
-      summary: เพิ่มข้อมูลงานใหม่
-      description: เพิ่มข้อมูลงานใหม่ลงในฐานข้อมูล
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - title
-                - dueDate
-                - status
-                - user_id
-                - category_id
-              properties:
-                title:
-                  type: string
-                  example: "จัดทำเอกสาร OpenAPI"
-                dueDate:
-                  type: string
-                  format: date
-                  example: "2026-10-25"
-                status:
-                  type: string
-                  example: "pending"
-                user_id:
-                  type: integer
-                  example: 1
-                category_id:
-                  type: integer
-                  example: 1
-      responses:
-        "201":
-          description: เพิ่มข้อมูลสำเร็จ
-        "400":
-          description: กรุณากรอกข้อมูลให้ครบถ้วน
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "กรุณากรอกข้อมูลให้ครบถ้วน"
-        "500":
-          description: เกิดข้อผิดพลาดในการเพิ่มข้อมูล
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /tasks/{id}:
-    get:
-      summary: ดึงข้อมูลงานรายรายการ
-      description: ดึงข้อมูลงาน 1 รายการตาม ID ที่ระบุ
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: รหัสของงาน (Task ID)
-          schema:
-            type: integer
-          example: 1
-      responses:
-        "200":
-          description: สำเร็จ
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "สำเร็จ"
-                  data:
-                    $ref: "#/components/schemas/Task"
-        "404":
-          description: ไม่พบข้อมูลงานที่ต้องการ
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "ไม่พบข้อมูลงานที่ต้องการ"
-        "500":
-          description: เกิดข้อผิดพลาดในการดึงข้อมูล
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-    put:
-      summary: แก้ไขข้อมูลงาน
-      description: แก้ไขข้อมูลงานตาม ID ที่ระบุ
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: รหัสของงาน (Task ID)
-          schema:
-            type: integer
-          example: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - title
-                - dueDate
-                - status
-              properties:
-                title:
-                  type: string
-                  example: "แก้ไขชื่องานใหม่"
-                dueDate:
-                  type: string
-                  format: date
-                  example: "2026-10-28"
-                status:
-                  type: string
-                  example: "completed"
-      responses:
-        "200":
-          description: แก้ไขข้อมูลสำเร็จ
-        "400":
-          description: กรุณากรอกข้อมูลให้ครบถ้วน
-        "404":
-          description: ไม่พบข้อมูลงานที่ต้องการแก้ไข
-        "500":
-          description: เกิดข้อผิดพลาดในการแก้ไขข้อมูล
-
-    delete:
-      summary: ลบข้อมูลงาน
-      description: ลบข้อมูลงานตาม ID ที่ระบุ
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: รหัสของงาน (Task ID)
-          schema:
-            type: integer
-          example: 1
-      responses:
-        "200":
-          description: ลบข้อมูลสำเร็จ
-        "404":
-          description: ไม่พบข้อมูลงานที่ต้องการลบ
-        "500":
-          description: เกิดข้อผิดพลาดในการลบข้อมูล
-
-  /tasks/external/quote:
-    get:
-      summary: ดึงคำคมประจำวันผ่าน External API
-      description: เรียกใช้บริการ External API เพื่อดึงคำคมสร้างแรงบันดาลใจ โดยมีกลไก Retry, Timeout และ Fallback
-      responses:
-        "200":
-          description: สำเร็จ (ได้รับข้อมูลจาก External API หรือ Fallback)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  source:
-                    type: string
-                    example: "external_api"
-                  data:
-                    type: object
-        "500":
-          description: ระบบไม่สามารถดึงข้อมูลคำคมได้
+          example: Pending
+        user_id:
+          oneOf:
+            - type: integer
+              example: 4
+            - type: string
+              example: ภูชิต ฤทธิไกร
+        category_id:
+          oneOf:
+            - type: integer
+              example: 1
+            - type: string
+              example: Project

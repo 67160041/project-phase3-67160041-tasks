@@ -2,38 +2,67 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const cors = require("cors");
 const swaggerUi = require("swagger-ui-express");
 const YAML = require("js-yaml");
 
-const db = require("./db"); // เรียกใช้ connection pool จาก db.js
-const { fetchQuoteWithResilience } = require("./services/external-api");
+const db = require("./db"); // ตัวเชื่อมต่อ MySQL
+
+// ---------------- 1. ตั้งค่า BullMQ & Redis Connection ----------------
+const { Queue } = require("bullmq");
+
+const redisOptions = {
+  host: process.env.REDIS_HOST || "127.0.0.1",
+  port: Number(process.env.REDIS_PORT) || 6379,
+  maxRetriesPerRequest: null,
+};
+
+let taskQueue;
+try {
+  taskQueue = new Queue("taskQueue", { connection: redisOptions });
+  console.log("✅ เชื่อมต่อ Redis Task Queue เรียบร้อยแล้ว");
+} catch (err) {
+  console.error("❌ ตั้งค่า Redis Task Queue ไม่สำเร็จ:", err.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "../public")));
 
-// ---------------- Swagger UI Setup (ส่วนที่ 1: Docs/DX) ----------------
-try {
-  // อ่านไฟล์ openapi.yaml ที่อยู่ root directory
-  const openapiPath = path.join(__dirname, "../openapi.yaml");
-  if (fs.existsSync(openapiPath)) {
-    const openapiDocument = YAML.load(fs.readFileSync(openapiPath, "utf8"));
-    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openapiDocument));
-    console.log("เอกสาร Swagger UI พร้อมใช้งานที่ /api-docs");
-  } else {
-    console.warn("คำเตือน: ไม่พบไฟล์ openapi.yaml ที่โฟลเดอร์ root");
+// ---------------- 2. Setup Swagger UI ----------------
+const possibleYamlPaths = [
+  path.join(__dirname, "../openapi.yaml"),
+  path.join(__dirname, "../swagger.yaml"),
+  path.join(__dirname, "./openapi.yaml"),
+  path.join(__dirname, "./swagger.yaml"),
+];
+
+let openapiDocument = null;
+for (const yamlPath of possibleYamlPaths) {
+  if (fs.existsSync(yamlPath)) {
+    try {
+      openapiDocument = YAML.load(fs.readFileSync(yamlPath, "utf8"));
+      break;
+    } catch (e) {
+      console.error(`❌ ไม่สามารถอ่านไฟล์ ${yamlPath}:`, e.message);
+    }
   }
-} catch (error) {
-  console.error("เกิดข้อผิดพลาดในการโหลดไฟล์ openapi.yaml:", error.message);
 }
 
-// ---------------- Route เริ่มต้น ----------------
+if (openapiDocument) {
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openapiDocument));
+  console.log("📖 Swagger UI พร้อมใช้งานที่ http://localhost:3000/api-docs");
+}
+
+// ---------------- 3. Routes (รวม 6 Endpoints) ----------------
 app.get("/", (req, res) => {
-  res.status(200).json({ message: "Tasks API พร้อมใช้งาน" });
+  res.sendFile(path.join(__dirname, "../public/index.html"));
 });
 
-// 1. GET: ดึงรายการงานทั้งหมดจาก Database
+// Route 1: GET /api/v1/tasks - ดึงรายการงานทั้งหมด
 app.get("/api/v1/tasks", async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -50,14 +79,39 @@ app.get("/api/v1/tasks", async (req, res) => {
     `);
     res.status(200).json({ message: "สำเร็จ", data: rows });
   } catch (error) {
-    res.status(500).json({
-      message: "เกิดข้อผิดพลาดในการดึงข้อมูล",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({ message: "เกิดข้อผิดพลาดในการดึงข้อมูล", error: error.message });
   }
 });
 
-// 2. GET: ดึงข้อมูลงานรายรายการ
+// Route 2: GET /api/v1/tasks/stats/overview - ดึงสถิติภาพรวมระบบ (แทนการใช้คำคม)
+app.get("/api/v1/tasks/stats/overview", async (req, res) => {
+  try {
+    const [totalRows] = await db.query("SELECT COUNT(*) AS total FROM tasks");
+    const [doneRows] = await db.query(
+      "SELECT COUNT(*) AS done FROM tasks WHERE UPPER(status) = 'DONE' OR status = 'เสร็จแล้ว'",
+    );
+    const [pendingRows] = await db.query(
+      "SELECT COUNT(*) AS pending FROM tasks WHERE UPPER(status) != 'DONE' AND status != 'เสร็จแล้ว'",
+    );
+
+    res.status(200).json({
+      message: "สำเร็จ",
+      data: {
+        totalTasks: totalRows[0].total,
+        doneTasks: doneRows[0].done,
+        pendingTasks: pendingRows[0].pending,
+      },
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "เกิดข้อผิดพลาดในการดึงสถิติ", error: error.message });
+  }
+});
+
+// Route 3: GET /api/v1/tasks/:id - ดึงข้อมูลงานเฉพาะ ID
 app.get("/api/v1/tasks/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -84,14 +138,13 @@ app.get("/api/v1/tasks/:id", async (req, res) => {
 
     res.status(200).json({ message: "สำเร็จ", data: rows[0] });
   } catch (error) {
-    res.status(500).json({
-      message: "เกิดข้อผิดพลาดในการดึงข้อมูล",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({ message: "เกิดข้อผิดพลาดในการดึงข้อมูล", error: error.message });
   }
 });
 
-// 3. POST: เพิ่มข้อมูลงานใหม่ลง Database
+// Route 4: POST /api/v1/tasks - มอบหมายงานใหม่
 app.post("/api/v1/tasks", async (req, res) => {
   try {
     const { title, dueDate, status, user_id, category_id } = req.body;
@@ -100,59 +153,118 @@ app.post("/api/v1/tasks", async (req, res) => {
       return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
     }
 
+    let finalUserId = user_id;
+    let finalCategoryId = category_id;
+
+    if (isNaN(user_id)) {
+      const [users] = await db.query("SELECT id FROM users WHERE name LIKE ?", [
+        `%${user_id}%`,
+      ]);
+      if (users.length === 0)
+        return res.status(400).json({ message: `ไม่พบผู้ใช้ '${user_id}'` });
+      finalUserId = users[0].id;
+    }
+
+    if (isNaN(category_id)) {
+      const [categories] = await db.query(
+        "SELECT id FROM categories WHERE name LIKE ?",
+        [`%${category_id}%`],
+      );
+      if (categories.length === 0)
+        return res
+          .status(400)
+          .json({ message: `ไม่พบหมวดหมู่ '${category_id}'` });
+      finalCategoryId = categories[0].id;
+    }
+
+    let cleanDueDate = dueDate.includes("T") ? dueDate.split("T")[0] : dueDate;
+
     const [result] = await db.query(
       "INSERT INTO tasks (title, dueDate, status, user_id, category_id) VALUES (?, ?, ?, ?, ?)",
-      [title, dueDate, status, user_id, category_id],
+      [title, cleanDueDate, status, finalUserId, finalCategoryId],
     );
 
-    res.status(201).json({
-      message: "เพิ่มข้อมูลสำเร็จ",
-      data: {
-        id: result.insertId,
-        title,
-        dueDate,
-        status,
-        user_id,
-        category_id,
-      },
-    });
+    const newTaskId = result.insertId;
+
+    if (taskQueue) {
+      taskQueue
+        .add("TASK_CREATED", {
+          taskId: newTaskId,
+          userId: finalUserId,
+          title,
+          action: "NOTIFY_ASSIGNED_USER",
+        })
+        .catch((qErr) => console.warn("⚠️ Task Queue Warning:", qErr.message));
+    }
+
+    res
+      .status(201)
+      .json({ message: "เพิ่มข้อมูลสำเร็จ", data: { id: newTaskId } });
   } catch (error) {
-    res.status(500).json({
-      message: "เกิดข้อผิดพลาดในการเพิ่มข้อมูล",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({
+        message: "เกิดข้อผิดพลาดในการเพิ่มข้อมูล",
+        error: error.message,
+      });
   }
 });
 
-// 4. PUT: แก้ไขข้อมูลงานใน Database
+// Route 5: PUT /api/v1/tasks/:id - อัปเดตสถานะงาน
 app.put("/api/v1/tasks/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { title, dueDate, status } = req.body;
-
-    if (!title || !dueDate || !status) {
-      return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบถ้วน" });
-    }
+    const { status } = req.body;
+    const targetStatus = status || "Done";
 
     const [result] = await db.query(
-      "UPDATE tasks SET title = ?, dueDate = ?, status = ? WHERE id = ?",
-      [title, dueDate, status, id],
+      "UPDATE tasks SET status = ? WHERE id = ?",
+      [targetStatus, id],
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "ไม่พบข้อมูลงานที่ต้องการแก้ไข" });
     }
 
-    res.status(200).json({ message: "แก้ไขข้อมูลสำเร็จ" });
+    if (
+      targetStatus.toUpperCase() === "DONE" ||
+      targetStatus === "Done" ||
+      targetStatus === "เสร็จแล้ว"
+    ) {
+      try {
+        const [taskRows] = await db.query(
+          "SELECT user_id FROM tasks WHERE id = ?",
+          [id],
+        );
+        const userId = taskRows[0]?.user_id;
+
+        if (taskQueue) {
+          taskQueue
+            .add("CALCULATE_RANKING", {
+              taskId: id,
+              userId: userId,
+              completedAt: new Date(),
+              action: "UPDATE_USER_POINTS",
+            })
+            .catch((qErr) =>
+              console.warn("⚠️ Task Queue Warning:", qErr.message),
+            );
+        }
+      } catch (dbErr) {}
+    }
+
+    return res.status(200).json({ message: "แก้ไขข้อมูลสำเร็จ" });
   } catch (error) {
-    res.status(500).json({
-      message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล",
-      error: error.message,
-    });
+    return res
+      .status(500)
+      .json({
+        message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล",
+        error: error.message,
+      });
   }
 });
 
-// 5. DELETE: ลบข้อมูลงานใน Database
+// Route 6: DELETE /api/v1/tasks/:id - ลบรายการงาน
 app.delete("/api/v1/tasks/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -164,27 +276,12 @@ app.delete("/api/v1/tasks/:id", async (req, res) => {
 
     res.status(200).json({ message: "ลบข้อมูลสำเร็จ" });
   } catch (error) {
-    res.status(500).json({
-      message: "เกิดข้อผิดพลาดในการลบข้อมูล",
-      error: error.message,
-    });
-  }
-});
-
-// 6. GET: Endpoint เชื่อมต่อ External API พร้อม Retry/Timeout/Fallback (ส่วนที่ 2: Integration)
-app.get("/api/v1/tasks/external/quote", async (req, res) => {
-  try {
-    const result = await fetchQuoteWithResilience();
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(500).json({
-      message: "ระบบไม่สามารถดึงข้อมูลคำคมได้",
-      error: error.message,
-    });
+    res
+      .status(500)
+      .json({ message: "เกิดข้อผิดพลาดในการลบข้อมูล", error: error.message });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Server กำลังทำงานที่ http://localhost:${PORT}`);
-  console.log(`เอกสาร API (Swagger UI): http://localhost:${PORT}/api-docs`);
 });
